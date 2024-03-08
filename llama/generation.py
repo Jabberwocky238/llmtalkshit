@@ -53,6 +53,7 @@ class Llama:
     def build(
         ckpt_dir: str,
         tokenizer_path: str,
+        # Maximum sequence length for input text. 输入最大长度
         max_seq_len: int,
         max_batch_size: int,
         model_parallel_size: Optional[int] = None,
@@ -101,15 +102,9 @@ class Llama:
         #     sys.stdout = open(os.devnull, "w")
 
         start_time = time.time()
-        # checkpoints = sorted(Path(ckpt_dir).glob("*.pth"))
-        # assert len(checkpoints) > 0, f"no checkpoint files found in {ckpt_dir}"
-        # assert model_parallel_size == len(
-        #     checkpoints
-        # ), f"Loading a checkpoint for MP={len(checkpoints)} but world size is {model_parallel_size}"
-        # ckpt_path = checkpoints[get_model_parallel_rank()]
         ckpt_path = f"{ckpt_dir}/consolidated.00.pth"
 
-        # checkpoint = torch.load(ckpt_path, map_location="cpu")
+        checkpoint = torch.load(ckpt_path, map_location="cpu")
         with open("params.json", "r") as f:
             params = json.loads(f.read())
 
@@ -124,7 +119,7 @@ class Llama:
         # torch.set_default_dtype(torch.cuda.HalfTensor)
         torch.set_default_device('cuda')
         model = Transformer(model_args)
-        # model.load_state_dict(checkpoint, strict=False)
+        model.load_state_dict(checkpoint, strict=False)
         print(f"Loaded in {time.time() - start_time:.2f} seconds")
 
         return Llama(model, tokenizer)
@@ -138,6 +133,7 @@ class Llama:
         self,
         prompt_tokens: List[List[int]],
         max_gen_len: int,
+        # Temperature value for controlling randomness in sampling
         temperature: float = 0.6,
         top_p: float = 0.9,
         logprobs: bool = False,
@@ -162,25 +158,42 @@ class Llama:
             If logprobs is True, token log probabilities are computed for each generated token.
 
         """
+        # 这是那个json文件
         params = self.model.params
+        """
+        num of prompt_tokens sets
+        """
         bsz = len(prompt_tokens)
-        assert bsz <= params.max_batch_size, (bsz, params.max_batch_size)
+        # print(prompt_tokens)
+        assert bsz <= params.max_batch_size, "保证prompt_tokens组数 cannot exceed max_batch_size"
 
-        min_prompt_len = min(len(t) for t in prompt_tokens)
-        max_prompt_len = max(len(t) for t in prompt_tokens)
-        assert max_prompt_len <= params.max_seq_len
+        min_prompt_len = min(len(t) for t in prompt_tokens) #所有prompts最小的长度
+        max_prompt_len = max(len(t) for t in prompt_tokens) #所有prompts最大的长度
+        assert max_prompt_len <= params.max_seq_len, "保证tokens size cannot exceed max_seq_len"
+        # 全长限制为 最大生成长度+最大prompt长度 的和 / 最大输入长度 的min
         total_len = min(params.max_seq_len, max_gen_len + max_prompt_len)
 
         pad_id = self.tokenizer.pad_id
+
+        # 初始化tokens张量, 填充为pad(-1)
         tokens = torch.full((bsz, total_len), pad_id, dtype=torch.long, device="cuda")
+        # print(tokens.size()) (batch, max_len)
+
+        # 把输入的tokens对进去
         for k, t in enumerate(prompt_tokens):
             tokens[k, : len(t)] = torch.tensor(t, dtype=torch.long, device="cuda")
+        
+        # 如果采用对数概率采样，我们需要计算每个生成的token的对数概率。这里是初始化
         if logprobs:
             token_logprobs = torch.zeros_like(tokens, dtype=torch.float)
 
+
         prev_pos = 0
+        # 输出结束标志 
         eos_reached = torch.tensor([False] * bsz, device="cuda")
         input_text_mask = tokens != pad_id
+        
+        # 如果最小的长度等于总长度，则直接生成???
         if min_prompt_len == total_len:
             logits = self.model.forward(tokens, prev_pos)
             token_logprobs = -F.cross_entropy(
@@ -190,7 +203,11 @@ class Llama:
                 ignore_index=pad_id,
             )
 
+        # 截断从prompt结束位置开始, 最大输出长度处结束
+        # print(min_prompt_len, total_len) 8 32
         for cur_pos in range(min_prompt_len, total_len):
+            # 前向传播, 输入每个prompt的所有prompt部分, 从0位置开始(prompt底部)
+            # 迭代的时候就是, 每次起始位置prev_pos更新为当前位置cur_pos
             logits = self.model.forward(tokens[:, prev_pos:cur_pos], prev_pos)
             if temperature > 0:
                 probs = torch.softmax(logits[:, -1] / temperature, dim=-1)
@@ -241,8 +258,10 @@ class Llama:
         self,
         prompts: List[str],
         temperature: float = 0.6,
+        # Top-p probability threshold for nucleus sampling
         top_p: float = 0.9,
         max_gen_len: Optional[int] = None,
+        # Flag indicating whether to compute token log probabilities
         logprobs: bool = False,
         echo: bool = False,
     ) -> List[CompletionPrediction]:
@@ -268,7 +287,9 @@ class Llama:
         """
         if max_gen_len is None:
             max_gen_len = self.model.params.max_seq_len - 1
+        # 字符化的token
         prompt_tokens = [self.tokenizer.encode(x, bos=True, eos=False) for x in prompts]
+        # print(prompt_tokens) [[1, 306, 4658, 278, 6593, 310, 2834, 338]]
         generation_tokens, generation_logprobs = self.generate(
             prompt_tokens=prompt_tokens,
             max_gen_len=max_gen_len,
@@ -403,6 +424,7 @@ class Llama:
 
 
 def sample_top_p(probs, p):
+
     """
     Perform top-p (nucleus) sampling on a probability distribution.
 

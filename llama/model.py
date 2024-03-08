@@ -503,27 +503,40 @@ class Transformer(nn.Module):
             torch.Tensor: Output logits after applying the Transformer model.
 
         """
+        # batch, 序列长度
         _bsz, seqlen = tokens.shape
+
+        # embedding隐藏层
         h = self.tok_embeddings(tokens)
+
+        # Precomputed cosine and sine frequencies.应该是位置编码
         self.freqs_cis = self.freqs_cis.to(h.device)
+        # 位置编码截断为, 起始点到终点
         freqs_cis = self.freqs_cis[start_pos : start_pos + seqlen]
 
         mask = None
         if seqlen > 1:
+            # 序列长度大于1则需要mask
+            # 生成一个全是负无穷的正方形mask
             mask = torch.full(
                 (seqlen, seqlen), float("-inf"), device=tokens.device
             )
 
+            # 上三角矩阵
+            # diagonal=1左上角到右下角的对角线
             mask = torch.triu(mask, diagonal=1)
+            # print("上三角矩阵", mask)
 
             # When performing key-value caching, we compute the attention scores
             # only for the new sequence. Thus, the matrix of scores is of size
             # (seqlen, cache_len + seqlen), and the only masked entries are (i, j) for
             # j > cache_len + i, since row i corresponds to token cache_len + i.
+            # print("before hstack", torch.zeros((seqlen, start_pos), device=tokens.device))
             mask = torch.hstack([
                 torch.zeros((seqlen, start_pos), device=tokens.device),
                 mask
             ]).type_as(h)
+            # print("hstack", mask)
 
         for layer in self.layers:
             h = layer(h, start_pos, freqs_cis, mask)

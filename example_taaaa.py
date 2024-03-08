@@ -1,7 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # This software may be used and distributed according to the terms of the Llama 2 Community License Agreement.
 
-import fire
+# import fire
 
 from llama import Llama
 from typing import List
@@ -14,8 +14,8 @@ def main(
     tokenizer_path: str,
     temperature: float = 0.6,
     top_p: float = 0.9,
-    max_seq_len: int = 128,
-    max_gen_len: int = 64,
+    max_seq_len: int = 128, # The maximum sequence length for input prompts
+    max_gen_len: int = 64, # The maximum length of generated sequences
     max_batch_size: int = 4,
 ):
     """
@@ -42,19 +42,20 @@ def main(
     prompts: List[str] = [
         # For these prompts, the expected answer is the natural continuation of the prompt
         "I believe the meaning of life is",
-        "Simply put, the theory of relativity states that ",
-        """A brief message congratulating the team on the launch:
+        # "我认为你像个傻逼",
+        # "Simply put, the theory of relativity states that ",
+        # """A brief message congratulating the team on the launch:
 
-        Hi everyone,
+        # Hi everyone,
         
-        I just """,
+        # I just """,
         # Few shot prompt (providing a few examples before asking model to complete more);
-        """Translate English to French:
+        # """Translate English to French:
         
-        sea otter => loutre de mer
-        peppermint => menthe poivrée
-        plush girafe => girafe peluche
-        cheese =>""",
+        # sea otter => loutre de mer
+        # peppermint => menthe poivrée
+        # plush girafe => girafe peluche
+        # cheese =>""",
     ]
     results = generator.text_completion(
         prompts,
@@ -63,9 +64,10 @@ def main(
         top_p=top_p,
     )
     for prompt, result in zip(prompts, results):
-        print(prompt)
-        print(f"> {result['generation']}")
-        print("\n==================================\n")
+        # print(prompt)
+        print("==================================")
+        print(f"{result['generation']}")
+        print("==================================")
 
 
 if __name__ == "__main__":
