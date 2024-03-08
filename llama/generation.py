@@ -81,6 +81,15 @@ class Llama:
             and loads the pre-trained model and tokenizer.
 
         """
+        # if not torch.distributed.is_initialized():
+        #     torch.distributed.init_process_group("nccl")
+        # if not model_parallel_is_initialized():
+        #     if model_parallel_size is None:
+        #         model_parallel_size = int(os.environ.get("WORLD_SIZE", 1))
+            # initialize_model_parallel(model_parallel_size)
+        
+        # torch.distributed.init_process_group("nccl")
+        # initialize_model_parallel(1)
 
         local_rank = int(os.environ.get("LOCAL_RANK", 0))
         torch.cuda.set_device(local_rank)
@@ -92,11 +101,15 @@ class Llama:
         #     sys.stdout = open(os.devnull, "w")
 
         start_time = time.time()
+        # checkpoints = sorted(Path(ckpt_dir).glob("*.pth"))
+        # assert len(checkpoints) > 0, f"no checkpoint files found in {ckpt_dir}"
+        # assert model_parallel_size == len(
+        #     checkpoints
+        # ), f"Loading a checkpoint for MP={len(checkpoints)} but world size is {model_parallel_size}"
+        # ckpt_path = checkpoints[get_model_parallel_rank()]
         ckpt_path = f"{ckpt_dir}/consolidated.00.pth"
 
         # checkpoint = torch.load(ckpt_path, map_location="cpu")
-        # with open(Path(ckpt_dir) / "params.json", "r") as f:
-        #     params = json.loads(f.read())
         with open("params.json", "r") as f:
             params = json.loads(f.read())
 
@@ -108,7 +121,7 @@ class Llama:
         tokenizer = Tokenizer(model_path=tokenizer_path)
         model_args.vocab_size = tokenizer.n_words
         # torch.set_default_tensor_type(torch.cuda.HalfTensor)
-        # torch.set_default_dtype(torch.cuda.FloatTensor)
+        # torch.set_default_dtype(torch.cuda.HalfTensor)
         torch.set_default_device('cuda')
         model = Transformer(model_args)
         # model.load_state_dict(checkpoint, strict=False)
